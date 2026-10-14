@@ -48,13 +48,20 @@ marketplace.zoom.us → *Develop → Build App → Server-to-Server OAuth* → s
 `meeting:write:meeting:admin`, `meeting:update:meeting:admin`, `meeting:delete:meeting:admin` → activate →
 copy Account ID / Client ID / Client Secret into the `ZOOM_*` settings, `ZOOM_USER` = Onyema's Zoom email.
 
-**3. Vercel** — Main Character already pays for Vercel Pro (team *MAIN CHARACTER projects*), so this costs nothing extra
-1. Import this folder as a new project in that team
-2. Add every setting from `.env.example` (*Settings → Environment Variables*)
+**3. Vercel** — works on any plan, Hobby included
+1. *Add New → Project* → import this GitHub repo
+2. Add every setting from `.env.example` (*Settings → Environment Variables*) → *Deploy*
 3. *Settings → Domains* → `afspraken.maincharacter.nl` → add the CNAME it shows at Vimexx (DNS)
-4. The reminder job runs by itself (`vercel.json`, every 15 minutes)
 
-**4. Switch over**
+Vercel blocks a deployment when the commit author's email is not linked to a GitHub account. Commit with the
+GitHub noreply address (`<id>+<user>@users.noreply.github.com`) or an email that is on the GitHub account.
+
+**4. Reminders** — cron-job.org (free), because Vercel Hobby allows only one cron run a day
+1. cron-job.org → *Create cronjob*
+2. URL: `https://afspraken.maincharacter.nl/api/cron/reminders?key=<CRON_SECRET>`
+3. Schedule: every 15 minutes → save. *Test run* should answer `{"sent":0}`.
+
+**5. Switch over**
 Run next to Calendly for two weeks, replace the Calendly links (website, Instagram bio, ManyChat, mail
 signatures), then cancel Calendly.
 
