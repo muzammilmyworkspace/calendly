@@ -14,7 +14,9 @@ no monthly fee.
 | On booking | event in the calendar · guest invited · Zoom/Meet link · confirmation mail · copy to the team |
 | Reminders | the day before and one hour before (skipped when the booking itself was that recent) |
 | Reschedule / cancel | link in every mail; signed, so nobody can touch someone else's booking |
-| Safety | double-booking check at the moment of booking · bot trap · input validation |
+| Overview | `/beheer` — every booking like Calendly's "Scheduled events": coming · past · cancelled, with all answers, search, filter per type, Excel export, and reschedule/cancel as the team |
+| History | a cancelled booking is not deleted: it moves to a calendar "MC Afspraken — Geannuleerd", with who cancelled, when and why — Onyema's own calendar stays clean |
+| Safety | double-booking check at the moment of booking · bot trap · input validation · retries when Google is busy |
 
 ## Change something
 
@@ -64,6 +66,11 @@ GitHub noreply address (`<id>+<user>@users.noreply.github.com`) or an email that
 **5. Switch over**
 Run next to Calendly for two weeks, replace the Calendly links (website, Instagram bio, ManyChat, mail
 signatures), then cancel Calendly.
+
+## The overview
+
+`https://<address>/beheer` → log in with `ADMIN_PASSWORD` (one shared password for Onyema and Kim; stays logged in
+for 7 days). *Exporteren naar Excel* downloads every booking with one column per question.
 
 ## Not in this version
 

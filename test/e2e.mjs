@@ -95,5 +95,39 @@ const ev3 = await cal.events.get({ calendarId: CAL, eventId: id }).then((r) => r
 check('afspraak geannuleerd', c.status === 200 && (!ev3 || ev3.status === 'cancelled'));
 check('geannuleerde afspraak opent niet meer', (await fetch(`${BASE}/b/${id}?t=${sign(id)}`).then((r) => r.text())).includes('niet gevonden'));
 
+// 10. cancelled = kept, in the archive calendar, not deleted
+const ARCH = env.ARCHIVE_CALENDAR_ID;
+const arch = await cal.events.get({ calendarId: ARCH, eventId: id }).then((r) => r.data).catch(() => null);
+check('geannuleerde afspraak bewaard in het archief', arch?.extendedProperties?.private?.state === 'cancelled');
+check('archief blokkeert geen tijd en gast is eraf', arch?.transparency === 'transparent' && !(arch?.attendees ?? []).length);
+check('reden en wie annuleerde zijn bewaard', arch?.extendedProperties?.private?.cancelReason === 'Einde test' && arch?.extendedProperties?.private?.cancelledBy === 'gast');
+
+// 11. overview (/beheer)
+const noFollow = { redirect: 'manual' };
+const gate = await fetch(BASE + '/beheer', noFollow);
+check('beheer zonder login stuurt naar inloggen', [302, 303, 307, 308].includes(gate.status) && (gate.headers.get('location') ?? '').includes('/beheer/login'));
+const login = (pw) => fetch(BASE + '/api/admin/login', { method: 'POST', body: new URLSearchParams({ password: pw }), ...noFollow });
+const bad = await login('fout-wachtwoord');
+check('fout wachtwoord geweigerd', (bad.headers.get('location') ?? '').includes('fout=1') && !bad.headers.get('set-cookie'));
+const good = await login(env.ADMIN_PASSWORD);
+const cookie = (good.headers.get('set-cookie') ?? '').split(';')[0];
+check('juist wachtwoord logt in', cookie.startsWith('mc_beheer='));
+check('export zonder login geweigerd', (await fetch(BASE + '/api/admin/export')).status === 401);
+const page = (tab) => fetch(`${BASE}/beheer?tab=${tab}`, { headers: { cookie } }).then((r) => r.text());
+
+// a second booking, cancelled by the team from the overview
+const s4 = await fetch(`${BASE}/api/slots?slug=strategie-call&from=${day(2)}&to=${day(14)}`).then(json);
+const b2 = await post('/api/book', { slug: 'strategie-call', start: s4.body.slots[1], name: 'TEST Overzicht', email: GUEST, answers });
+const id2 = b2.body.id;
+const up = await page('aankomend');
+check('nieuwe afspraak staat in "Aankomend"', up.includes('TEST Overzicht') && up.includes('Test van de eigen boekingstool'));
+const csv = await fetch(BASE + '/api/admin/export', { headers: { cookie } }).then((r) => r.text());
+check('Excel-export bevat de afspraak met antwoorden', csv.includes('TEST Overzicht') && csv.includes('Test van de eigen boekingstool') && csv.includes('Wat is op dit moment je grootste droom'));
+const tc = await fetch(BASE + '/api/manage', { method: 'POST', headers: { 'Content-Type': 'application/json', cookie }, body: JSON.stringify({ action: 'cancel', id: id2, t: sign(id2), reason: 'Team-test' }) }).then(json);
+const arch2 = await cal.events.get({ calendarId: ARCH, eventId: id2 }).then((r) => r.data).catch(() => null);
+check('team kan annuleren — staat als "door team"', tc.status === 200 && arch2?.extendedProperties?.private?.cancelledBy === 'team', `boeking ${b2.status} ${b2.body.error ?? ''} · annuleren ${tc.status} ${tc.body.error ?? ''} · archief: ${arch2 ? (arch2.extendedProperties?.private?.cancelledBy ?? 'GEEN props') : 'NIET GEVONDEN'}`);
+const gone = await page('geannuleerd');
+check('beide annuleringen staan in "Geannuleerd"', gone.includes('TEST Overzicht') && gone.includes('TEST Muzammil') && gone.includes('door team') && gone.includes('door gast'));
+
 console.log(`\n${pass} geslaagd, ${fail} mislukt`);
 process.exit(fail ? 1 : 0);

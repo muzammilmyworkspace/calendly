@@ -26,11 +26,25 @@ function makeAuth() {
   return o;
 }
 
+/**
+ * Google answers a burst of calendar writes with "Rate Limit Exceeded" (a 403, not only a 429). Without a
+ * retry, a cancellation could stop halfway: guest removed, event moved, but its details not yet written.
+ * So every call waits and tries again — 1, 2, 4, 8 seconds — before it gives up.
+ */
+const retry = {
+  retry: true,
+  retryConfig: {
+    retry: 4, retryDelay: 1000, retryDelayMultiplier: 2,
+    statusCodesToRetry: [[403, 403], [429, 429], [500, 599]],
+    httpMethodsToRetry: ['GET', 'HEAD', 'OPTIONS', 'PUT', 'PATCH', 'POST', 'DELETE'],
+  },
+};
+
 let clients: { cal: ReturnType<typeof calendar>; mail: ReturnType<typeof gmail> } | null = null;
 export function google() {
   if (!clients) {
     const auth = makeAuth();
-    clients = { cal: calendar({ version: 'v3', auth }), mail: gmail({ version: 'v1', auth }) };
+    clients = { cal: calendar({ version: 'v3', auth, ...retry }), mail: gmail({ version: 'v1', auth, ...retry }) };
   }
   return clients;
 }

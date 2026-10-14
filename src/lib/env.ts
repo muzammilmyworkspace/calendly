@@ -20,6 +20,10 @@ export const env = {
   /** e.g. https://afspraken.maincharacter.nl — used to build links in mails */
   get publicUrl() { return need('PUBLIC_URL').replace(/\/$/, ''); },
   get cronSecret() { return process.env.CRON_SECRET ?? ''; },
+  /** password for the overview at /beheer; without it the overview stays shut */
+  get adminPassword() { return process.env.ADMIN_PASSWORD ?? ''; },
+  /** optional: where cancelled bookings go; empty = a calendar "MC Afspraken — Geannuleerd" is found or made */
+  get archiveCalendarId() { return process.env.ARCHIVE_CALENDAR_ID ?? ''; },
   zoom: {
     get enabled() { return !!(process.env.ZOOM_ACCOUNT_ID && process.env.ZOOM_CLIENT_ID && process.env.ZOOM_CLIENT_SECRET); },
     get accountId() { return need('ZOOM_ACCOUNT_ID'); },

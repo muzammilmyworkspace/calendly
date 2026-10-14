@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { BookingError, cancelBooking, rescheduleBooking } from '@/lib/bookings';
 import { verify } from '@/lib/tokens';
+import { isAdmin } from '@/lib/admin';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -15,7 +16,8 @@ export async function POST(req: Request) {
   try { body = Body.parse(await req.json()); } catch { return Response.json({ error: 'Ongeldige aanvraag' }, { status: 400 }); }
   if (!verify(body.id, body.t)) return Response.json({ error: 'Deze link is niet geldig.' }, { status: 403 });
   try {
-    if (body.action === 'cancel') { await cancelBooking(body.id, body.reason); return Response.json({ ok: true }); }
+    // logged into the overview = the team cancelled it, otherwise the guest did
+    if (body.action === 'cancel') { await cancelBooking(body.id, body.reason, (await isAdmin()) ? 'team' : 'gast'); return Response.json({ ok: true }); }
     return Response.json({ ok: true, ...(await rescheduleBooking(body.id, body.start)) });
   } catch (e) {
     if (e instanceof BookingError) return Response.json({ error: e.message }, { status: 409 });

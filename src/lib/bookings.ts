@@ -25,13 +25,48 @@ async function busy(timeMin: string, timeMax: string): Promise<Busy[]> {
   return Object.values(r.data.calendars ?? {}).flatMap((c) => (c.busy ?? []).map((b) => ({ start: b.start!, end: b.end! })));
 }
 
-async function ourEvents(timeMin: string, timeMax: string): Promise<Ev[]> {
+async function ourEvents(timeMin: string, timeMax: string, calendarId = env.hostCalendarId): Promise<Ev[]> {
   const out: Ev[] = []; let pageToken: string | undefined;
   do {
-    const r = await google().cal.events.list({ calendarId: env.hostCalendarId, timeMin, timeMax, singleEvents: true, privateExtendedProperty: ['mcBooking=1'], maxResults: 250, pageToken });
+    const r = await google().cal.events.list({ calendarId, timeMin, timeMax, singleEvents: true, orderBy: 'startTime', privateExtendedProperty: ['mcBooking=1'], maxResults: 250, pageToken });
     out.push(...(r.data.items ?? [])); pageToken = r.data.nextPageToken ?? undefined;
   } while (pageToken);
   return out;
+}
+
+/**
+ * Cancelled bookings are moved here instead of deleted, so the history Calendly used to keep survives
+ * without cluttering Onyema's own calendar. It is not one of the busy calendars, so nothing in it blocks time.
+ */
+const ARCHIVE_NAME = 'MC Afspraken — Geannuleerd';
+let archiveId: string | null = null;
+export async function archiveCalendarId() {
+  if (env.archiveCalendarId) return env.archiveCalendarId;
+  if (archiveId) return archiveId;
+  const list = await google().cal.calendarList.list({ maxResults: 250 });
+  const found = list.data.items?.find((c) => c.summary === ARCHIVE_NAME);
+  archiveId = found?.id ?? (await google().cal.calendars.insert({
+    requestBody: { summary: ARCHIVE_NAME, description: 'Geannuleerde afspraken uit de boekingstool. Blokkeert geen tijd.', timeZone: HOST.timezone },
+  })).data.id!;
+  return archiveId;
+}
+
+/**
+ * The answers, kept as data on the event so the overview can show them per question. A private property
+ * holds at most 1,024 characters, so the JSON is cut into numbered pieces.
+ */
+const CHUNK = 1000;
+function packAnswers(answers: { label: string; value: string }[]) {
+  const json = JSON.stringify(answers.map((a) => [a.label, a.value]));
+  const out: Record<string, string> = {};
+  for (let i = 0, n = 0; i < json.length; i += CHUNK, n++) out[`a${n}`] = json.slice(i, i + CHUNK);
+  return out;
+}
+export function unpackAnswers(p: Record<string, string> | undefined | null) {
+  if (!p) return [];
+  let s = '';
+  for (let n = 0; p[`a${n}`] !== undefined; n++) s += p[`a${n}`];
+  try { return (JSON.parse(s) as [string, string][]).map(([label, value]) => ({ label, value })); } catch { return []; }
 }
 
 /** free start times for a type between two days (YYYY-MM-DD, host time); `ignore` leaves one booking out — used when moving it */
@@ -95,6 +130,7 @@ export async function createBooking(input: { slug: string; start: string; name: 
         extendedProperties: { private: {
           mcBooking: '1', slug: type.slug, guestName: input.name.slice(0, 200), guestEmail: input.email,
           videoUrl: zoom?.url ?? '', zoomId: zoom?.id ?? '', bookedAt: new Date().toISOString(), r24: '0', r1: '0',
+          ...packAnswers(answers),
         } },
       },
     })).data;
@@ -117,13 +153,25 @@ export async function getBooking(id: string) {
   } catch { return null; }
 }
 
-export async function cancelBooking(id: string, reason: string) {
+/**
+ * Not deleted: the guest is taken off (Google sends them its own cancellation), the event is marked and moved
+ * to the archive calendar. That keeps the history for the overview and frees the time in Onyema's calendar.
+ */
+export async function cancelBooking(id: string, reason: string, by: 'gast' | 'team' = 'gast') {
   const b = await getBooking(id);
   if (!b) throw new BookingError('Deze afspraak bestaat niet (meer).');
   const mb = toMail(b.ev, b.type);
-  const zoomId = b.ev.extendedProperties?.private?.zoomId;
-  await google().cal.events.delete({ calendarId: env.hostCalendarId, eventId: id, sendUpdates: 'all' });
-  if (zoomId) await deleteZoomMeeting(zoomId).catch((e) => console.error('zoom verwijderen mislukt', e));
+  const p = b.ev.extendedProperties?.private ?? {};
+  const kept = { ...p, state: 'cancelled', cancelledAt: new Date().toISOString(), cancelledBy: by, cancelReason: reason.slice(0, 900) };
+  await google().cal.events.patch({
+    calendarId: env.hostCalendarId, eventId: id, sendUpdates: 'all',
+    requestBody: { attendees: [], transparency: 'transparent', summary: `GEANNULEERD — ${b.ev.summary ?? ''}` },
+  });
+  const archive = await archiveCalendarId();
+  await google().cal.events.move({ calendarId: env.hostCalendarId, eventId: id, destination: archive });
+  // private properties belong to one calendar and do not travel with a move — write them again on the archive copy
+  await google().cal.events.patch({ calendarId: archive, eventId: id, sendUpdates: 'none', requestBody: { extendedProperties: { private: kept } } });
+  if (p.zoomId) await deleteZoomMeeting(p.zoomId).catch((e) => console.error('zoom verwijderen mislukt', e));
   await mailSafe('annulering', () => mailCancelled(mb, `${env.publicUrl}/${b.type.slug}`));
   await mailSafe('team', () => mailTeam('Geannuleerd', mb, reason ? `Reden: ${reason}` : ''));
 }
@@ -174,3 +222,34 @@ export async function sendDueReminders(now = new Date()) {
 }
 
 export const listedTypes = () => EVENT_TYPES.filter((t) => t.listed);
+
+export type Tab = 'aankomend' | 'afgelopen' | 'geannuleerd';
+export type Row = {
+  id: string; tab: Tab; typeName: string; slug: string; start: string; end: string;
+  guestName: string; guestEmail: string; videoUrl?: string; bookedAt?: string;
+  cancelledAt?: string; cancelledBy?: string; cancelReason?: string;
+  answers: { label: string; value: string }[]; manageUrl: string;
+};
+
+function toRow(ev: Ev, tab: Tab): Row {
+  const p = ev.extendedProperties?.private ?? {};
+  const type = eventTypeBySlug(p.slug ?? '');
+  return {
+    id: ev.id!, tab, typeName: type?.name ?? p.slug ?? '?', slug: p.slug ?? '',
+    start: ev.start?.dateTime ?? '', end: ev.end?.dateTime ?? '',
+    guestName: p.guestName ?? '', guestEmail: p.guestEmail ?? '',
+    videoUrl: p.videoUrl || ev.hangoutLink || undefined, bookedAt: p.bookedAt,
+    cancelledAt: p.cancelledAt, cancelledBy: p.cancelledBy, cancelReason: p.cancelReason,
+    answers: unpackAnswers(p), manageUrl: manageUrl(ev.id!),
+  };
+}
+
+/** The overview, the way Calendly's "Scheduled events" listed them: coming, past (last year), cancelled */
+export async function listBookings(tab: Tab): Promise<Row[]> {
+  const now = new Date(), yearAgo = new Date(now.getTime() - 365 * 86_400_000), ahead = new Date(now.getTime() + 400 * 86_400_000);
+  if (tab === 'aankomend') return (await ourEvents(now.toISOString(), ahead.toISOString())).map((e) => toRow(e, tab));
+  if (tab === 'afgelopen') return (await ourEvents(yearAgo.toISOString(), now.toISOString())).map((e) => toRow(e, tab)).reverse();
+  return (await ourEvents(yearAgo.toISOString(), ahead.toISOString(), await archiveCalendarId()))
+    // by appointment date, newest first — the overview groups per day, so this must follow the date
+    .map((e) => toRow(e, tab)).sort((a, b) => b.start.localeCompare(a.start) || (b.cancelledAt ?? '').localeCompare(a.cancelledAt ?? ''));
+}
