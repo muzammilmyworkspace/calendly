@@ -10,7 +10,7 @@ import { OAuth2Client } from 'google-auth-library';
 
 const env = Object.fromEntries(fs.readFileSync('.env.local', 'utf8').split('\n').filter((l) => l && !l.startsWith('#')).map((l) => [l.slice(0, l.indexOf('=')), l.slice(l.indexOf('=') + 1)]));
 const BASE = 'http://localhost:3005';
-const GUEST = 'muzammilasrar132@gmail.com';
+const GUEST = 'muzammilasrar132+mc-test@gmail.com';   // plus-address: same inbox, easy to filter away
 const sign = (id) => crypto.createHmac('sha256', env.BOOKING_SECRET).update(id).digest('base64url').slice(0, 24);
 const auth = new OAuth2Client(env.GOOGLE_CLIENT_ID, env.GOOGLE_CLIENT_SECRET); auth.setCredentials({ refresh_token: env.GOOGLE_REFRESH_TOKEN });
 const cal = calendar({ version: 'v3', auth });

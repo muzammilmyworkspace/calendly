@@ -163,9 +163,13 @@ export async function cancelBooking(id: string, reason: string, by: 'gast' | 'te
   const mb = toMail(b.ev, b.type);
   const p = b.ev.extendedProperties?.private ?? {};
   const kept = { ...p, state: 'cancelled', cancelledAt: new Date().toISOString(), cancelledBy: by, cancelReason: reason.slice(0, 900) };
+  // Two steps on purpose. Removing the guest is the only change they hear about — Google sends them a plain
+  // "Canceled event" with the original title. Renaming in the same call made Google send them
+  // "Invitation: GEANNULEERD — …" and "Updated invitation: …" as well.
+  await google().cal.events.patch({ calendarId: env.hostCalendarId, eventId: id, sendUpdates: 'all', requestBody: { attendees: [] } });
   await google().cal.events.patch({
-    calendarId: env.hostCalendarId, eventId: id, sendUpdates: 'all',
-    requestBody: { attendees: [], transparency: 'transparent', summary: `GEANNULEERD — ${b.ev.summary ?? ''}` },
+    calendarId: env.hostCalendarId, eventId: id, sendUpdates: 'none',
+    requestBody: { transparency: 'transparent', summary: `GEANNULEERD — ${b.ev.summary ?? ''}` },
   });
   const archive = await archiveCalendarId();
   await google().cal.events.move({ calendarId: env.hostCalendarId, eventId: id, destination: archive });
