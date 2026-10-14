@@ -3,8 +3,8 @@
   --gold: #B8925A; --gold-deep: #82623A; --gold-light: #D7B679; --gold-wash: #F4ECDD;
   --cream: #FAF6EF; --paper: #FFFFFF; --ink: #1C1A16; --black: #0A0A0B; --muted: #6B6152;
   --line: #E8DFD0; --red: #9B2C2C;
-  --display: var(--font-display), 'Cormorant Garamond', 'Iowan Old Style', Georgia, serif;
-  --body: var(--font-body), Inter, -apple-system, 'Segoe UI', sans-serif;
+  --display: 'Cormorant Garamond', 'Iowan Old Style', Georgia, serif;
+  --body: 'Inter Variable', Inter, -apple-system, 'Segoe UI', sans-serif;
   --radius: 22px;
 }
 * { box-sizing: border-box; }

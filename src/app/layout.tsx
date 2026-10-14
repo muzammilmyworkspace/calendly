@@ -1,10 +1,14 @@
 import type { Metadata } from 'next';
-import { Cormorant_Garamond, Inter } from 'next/font/google';
+// The two typefaces of the MAIN CHARACTER website, shipped inside the app (fontsource).
+// Not next/font/google: that downloads from Google during the build, and on Vercel's build machines the
+// download can fail — Next 16 then stops with "next/font/google queries have exactly one entry".
+import '@fontsource/cormorant-garamond/500.css';
+import '@fontsource/cormorant-garamond/600.css';
+import '@fontsource/cormorant-garamond/700.css';
+import '@fontsource/cormorant-garamond/500-italic.css';
+import '@fontsource/cormorant-garamond/600-italic.css';
+import '@fontsource-variable/inter';
 import './globals.css';
-
-// the two typefaces of the MAIN CHARACTER website, served from this app — no call to Google at page load
-const display = Cormorant_Garamond({ subsets: ['latin'], weight: ['500', '600', '700'], variable: '--font-display', display: 'swap' });
-const body = Inter({ subsets: ['latin'], variable: '--font-body', display: 'swap' });
 
 export const metadata: Metadata = {
   title: 'Plan een gesprek — MAIN CHARACTER',
@@ -14,7 +18,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="nl" className={`${display.variable} ${body.variable}`}>
+    <html lang="nl">
       <body>{children}</body>
     </html>
   );
